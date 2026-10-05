@@ -5,6 +5,38 @@ import signal
 import sys
 import time
 
+def position_error(actual, target):
+    """Signed difference across the drive's 32-bit position-counter rollover."""
+    return (actual - target + 2**31) % 2**32 - 2**31
+
+
+class MotorErrorReadout:
+    def __init__(self, stream=None, clock=time.monotonic):
+        self.stream = sys.stdout if stream is None else stream
+        self.clock = clock
+        self.live = self.stream.isatty()
+        self.interval = .2 if self.live else 1.
+        self.next_print = 0.
+        self.peak = 0
+        self.displayed = False
+
+    def sample(self, actual, target):
+        error = position_error(actual, target)
+        self.peak = max(self.peak, abs(error))
+        now = self.clock()
+        if now >= self.next_print:
+            line = 'Motor error: {:+9d} counts | sampled peak: {:9d} counts'.format(error, self.peak)
+            self.stream.write(('\r' + line) if self.live else (line + '\n'))
+            self.stream.flush()
+            self.displayed = True
+            self.next_print = now + self.interval
+
+    def finish(self):
+        if self.live and self.displayed:
+            self.stream.write('\n')
+            self.stream.flush()
+
+
 class StopRequested(Exception):
     pass
 
@@ -70,7 +102,7 @@ class HoldTest:
             self.p['cw-request'] = word
             self.wait(lambda: (self.p['status'] & 0x6f) == expected,
                       'drive state 0x{:02x}'.format(expected), check_health=True)
-        d = (self.p['actual'] - self.p['target'] + 2**31) % 2**32 - 2**31
+        d = position_error(self.p['actual'], self.p['target'])
         if abs(d) > 1000:
             raise RuntimeError('Spindle moved during setup; target will not be enabled')
         if self.p['mode-fb'] != 8:
@@ -83,10 +115,15 @@ class HoldTest:
     def hold(self):
         self.enable()
         print('CSP HOLD ENABLED. Press Enter in the launcher or run ./spindle-test.sh off.', flush=True)
-        while True:
-            self.tick()
-            if not self.p['allowed'] or self.p['mode-fb'] != 8 or (self.p['status'] & 0x6f) != 0x27:
-                raise RuntimeError('Holding interrupted by mode/state/interlock change')
+        readout = MotorErrorReadout(clock=self.clock)
+        try:
+            while True:
+                self.tick()
+                if not self.p['allowed'] or self.p['mode-fb'] != 8 or (self.p['status'] & 0x6f) != 0x27:
+                    raise RuntimeError('Holding interrupted by mode/state/interlock change')
+                readout.sample(self.p['actual'], self.p['target'])
+        finally:
+            readout.finish()
 
     def disabled_only(self):
         self.p['cw-request'] = 0
@@ -167,8 +204,8 @@ def main():
     signal.signal(signal.SIGHUP, interrupted)
     launcher_pid = int(os.environ.get('CSP_LAUNCHER_PID', os.getppid()))
     parent_alive = lambda: os.getppid() == launcher_pid
-    from tuning import PositionGainTuner
-    tuner = PositionGainTuner(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+    from tuning import GainTuner
+    tuner = GainTuner(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                          '.position-gain-backup.json')) if powered else None
     test = HoldTest(c, parent_alive=parent_alive, tuner=tuner)
     started = False

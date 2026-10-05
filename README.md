@@ -1,10 +1,10 @@
 # SV670N stationary spindle hold
 
-`hold` is enabled in this revision. The standalone disabled session has passed
-on the target controller. The untuned powered hold has now passed on the target and substantially
-improved the observed restoring force. The +25% position-gain trial and restoration passed on the target, with no
-notable additional rigidity reported. This revision trials +50% over the
-original live baseline; it still needs a hardware run.
+The untuned CSP hold has passed on the target and improved restoring force.
+Increasing position gain to 150% added return noise without noticeably reducing
+deflection. This revision instead keeps the original position gain and trials
+**125% of the original speed-loop gain**, with a live motor-error display. The
+new speed trial is offline-tested and still needs its first hardware run.
 
 ## Run on the target
 
@@ -12,7 +12,7 @@ Close PathPilot completely. Start with the spindle stationary and the
 exchange arm clear of the spindle. Keep hands clear during the enable sequence
 and keep the hardware E-stop accessible.
 
-Replace the old folder contents with this package, then run from that folder:
+Stop any running test, update the checkout, then run from its folder:
 
 ```bash
 bash ./spindle-test.sh check
@@ -22,11 +22,14 @@ bash ./spindle-test.sh hold
 There is no requirement to repeat `disabled`. The hold launcher also performs
 `check` itself. Run `hold` in an interactive terminal.
 
-Plain `hold` automatically reads the live first-bank position gain (0x2008:3),
-saves it locally, and applies **150% of that original value**, rounded to the
-nearest raw count. An 8.0 Hz baseline becomes 12.0 Hz. Speed gain, integral
-time, second-bank gains and torque limits are unchanged. No tuning arguments
-or manual SDO commands are needed. The displayed values are readback-verified.
+Plain `hold` automatically reads the live first-bank speed gain (0x2008:1),
+saves it locally, and applies **125% of that original value**, rounded to the
+nearest raw count. A 20.0 Hz baseline becomes 25.0 Hz. The position-gain boost
+has been removed: the original position gain is kept (8.0 Hz in the supplied
+configuration). Integral time is kept (4.00 ms in the supplied configuration).
+The actual position gain and integral time are read and displayed at startup;
+no fixed baseline is assumed. Second-bank gains, torque limits and filters
+are unchanged. No tuning arguments or manual SDO commands are needed.
 
 Wait for **CSP HOLD ENABLED** before assessing spindle rigidity. The command
 holds the current position; it does not request a new angle or a tool change.
@@ -39,15 +42,16 @@ another terminal in the same folder:
 bash ./spindle-test.sh off
 ```
 
-Normal exit first prints **Original position gain restored and verified**,
+Normal exit first prints **Original speed gain restored and verified**,
 then **Spindle disabled; CSV mode 9 acknowledged; standalone session can
-close.** and for the launcher to exit before reopening PathPilot. `off` is a
+close.** Wait for the launcher to exit before reopening PathPilot. `off` is a
 stop request, not a separate step needed after the hold terminal has closed.
 If disable or mode acknowledgement is unavailable, use the hardware E-stop
 and inspect the drive before restarting.
 
 The original gain is saved in `.position-gain-backup.json` before the first
-SDO write. A normal stop, handled signal or setup failure attempts to restore
+SDO write. The legacy filename is retained so outstanding backups from the
+position-gain trials are automatically recovered before starting a speed trial. A normal stop, handled signal or setup failure attempts to restore
 it while the drive is disabled, before requesting CSV. Failed writes/readbacks
 abort enable. Failed restoration retains the file, reports failure and does
 not request CSV. Do not reopen PathPilot until restoration is confirmed.
@@ -58,7 +62,7 @@ saved original while disabled before starting a fresh trial. An unexpected
 live gain or a different drive stops recovery rather than overwriting it.
 Do not delete the file to bypass a recovery error. `disabled` does not recover
 a pending tuning record. Repeated completed runs always start from the restored
-baseline, so the 50% increase does not compound.
+baseline, so the 25% speed-gain increase does not compound.
 
 ## Sequence and boundaries
 
@@ -82,17 +86,44 @@ Mode/state/interlock loss requests a stop. A realtime latch gates the spindle
 control word on bus OP, STO feedback, drive fault, ATC air/VFD interlocks,
 supervisor permit and a one-second heartbeat watchdog. A lost heartbeat or
 interlock drops the control word to zero. Normal exit confirms disabled state
-and restores/verifies the original position gain before requesting and
+and restores/verifies the original speed gain before requesting and
 acknowledging CSV mode 9. Hardware STO/E-stop remains
 available independently of this software test.
 
-Only 0x2008:3 is downloaded for the temporary trial and restoration. No
+Only 0x2008:1 is downloaded for the speed trial and restoration. Recovery of
+an outstanding old position-gain backup may also restore 0x2008:3. No
 EEPROM-save command, mask, gearing or other tuning-parameter write is sent.
 60FE:2 may be zero or 0x04010000 and is preserved. DO2 remains drive-controlled
 ALM/contactor with 2004:3=11 and 2004:4=1. The gain-switchover PDO is low,
 matching the supplied orient implementation. With a zero mask, no effective
 forced P/PI override is assumed. Rigidity improvement is to be determined by
 the test, not guaranteed by selecting CSP.
+
+## Live motor-position error
+
+After CSP HOLD ENABLED the terminal updates one line:
+
+```text
+Motor error:      +125 counts | sampled peak:       250 counts
+```
+
+Error is **actual position minus the fixed captured target**, with signed
+32-bit counter rollover handled. The sign indicates direction. The sampled
+peak is the largest absolute error seen during this hold, starting after
+Operation Enabled; it resets for each run. Feedback is sampled at about 20 Hz
+and displayed at 5 Hz in a terminal. Redirected output uses one line per second.
+The peak is sampled, not a guaranteed capture of every transient.
+
+The readout uses existing PDO feedback and performs no SDO transactions while
+holding. It reports raw drive position counts, not spindle millimeters or
+degrees; pulley/gearing conversion is deliberately omitted. It neither changes
+the target nor adds a new stop threshold during the feel test.
+
+If physical spindle movement is substantial while motor error stays small,
+that points toward compliance or play between motor feedback and spindle.
+If motor error rises with the movement, the servo loop is also yielding. This
+readout does not measure spindle-side displacement or identify a specific
+mechanical fault by itself.
 
 ## Target and portability
 
@@ -122,6 +153,7 @@ Do not source the launcher; run it with bash.
 python3 test_offline.py
 python3 test_launcher.py
 python3 test_tuning.py
+python3 test_readout.py
 bash -n spindle-test.sh
 ```
 
@@ -133,8 +165,10 @@ sourcing protection and read failures. They do not establish physical drive
 or realtime transport behavior. Tuning tests also cover durable backup before
 writes, live-baseline scaling, readback failures, ambiguous-write recovery,
 non-compounding retries, drive identity, external changes, disabled-state
-requirements, and restoration before CSV. The trial factor is
-`POSITION_GAIN_PERCENT = 150` in tuning.py; later trials change that constant
+requirements, restoration before CSV, and recovery of the old position-gain
+backup format. Display tests cover signed error, counter rollover, sampled
+peaks between display updates, terminal throttling and redirected output. The trial factor is
+`SPEED_GAIN_PERCENT = 125` in tuning.py; later trials change that constant
 in a reviewed revision rather than increasing it automatically on each run.
 
 ## Updating a Git checkout on the controller

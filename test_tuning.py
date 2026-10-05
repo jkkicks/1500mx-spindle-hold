@@ -1,9 +1,10 @@
 """Exercise gain-write failure/recovery and hold sequencing without hardware."""
 import os
+import json
 import shutil
 import tempfile
 import unittest
-from tuning import PositionGainTuner
+from tuning import GainTuner
 from test_offline import Fake
 from hold import HoldTest
 
@@ -11,6 +12,8 @@ from hold import HoldTest
 class Drive:
     def __init__(self):
         self.position_gain = 80
+        self.speed_gain = 200
+        self.integral_time = 400
         self.status = 0x40
         self.serial = 123
         self.writes = []
@@ -25,14 +28,19 @@ class Drive:
         if index == '0x6041':
             return self.status
         if index == '0x2008':
-            return {3: self.position_gain, 9: 0}[subindex]
+            return {1: self.speed_gain, 2: self.integral_time, 3: self.position_gain, 9: 0}[subindex]
         raise AssertionError('Unexpected SDO read')
 
     def write(self, datatype, index, subindex, value):
         self.writes.append((index, subindex, value))
         self.assert_backup_exists()
         if not self.ignore_download:
-            self.position_gain = value
+            if subindex == 1:
+                self.speed_gain = value
+            elif subindex == 3:
+                self.position_gain = value
+            else:
+                raise AssertionError('Unexpected SDO write')
         if self.fail_download_after_write:
             self.fail_download_after_write = False
             raise RuntimeError('Ambiguous download failure')
@@ -44,36 +52,52 @@ class TuningTests(unittest.TestCase):
         self.path = os.path.join(self.root, '.position-gain-backup.json')
         self.drive = Drive()
         self.drive.assert_backup_exists = lambda: self.assertTrue(os.path.exists(self.path))
-        self.tuner = PositionGainTuner(self.path, self.drive)
+        self.tuner = GainTuner(self.path, self.drive)
 
     def tearDown(self):
         shutil.rmtree(self.root)
 
     def test_live_baseline_and_verified_restore(self):
-        self.drive.position_gain = 120
+        self.drive.speed_gain = 240
         self.tuner.apply()
-        self.assertEqual(self.drive.position_gain, 180)
+        self.assertEqual(self.drive.speed_gain, 300)
         self.assertTrue(os.path.exists(self.path))
         self.tuner.restore()
-        self.assertEqual(self.drive.position_gain, 120)
+        self.assertEqual(self.drive.speed_gain, 240)
+        self.assertEqual(self.drive.position_gain, 80)
+        self.assertEqual(self.drive.integral_time, 400)
         self.assertFalse(os.path.exists(self.path))
-        self.assertEqual(self.drive.writes, [('0x2008', 3, 180), ('0x2008', 3, 120)])
+        self.assertEqual(self.drive.writes, [('0x2008', 1, 300), ('0x2008', 1, 240)])
 
     def test_recover_ambiguous_write(self):
         self.drive.fail_download_after_write = True
         with self.assertRaises(RuntimeError):
             self.tuner.apply()
-        self.assertEqual(self.drive.position_gain, 120)
+        self.assertEqual(self.drive.speed_gain, 250)
         self.assertTrue(os.path.exists(self.path))
-        PositionGainTuner(self.path, self.drive).restore()
-        self.assertEqual(self.drive.position_gain, 80)
+        GainTuner(self.path, self.drive).restore()
+        self.assertEqual(self.drive.speed_gain, 200)
         self.assertFalse(os.path.exists(self.path))
 
     def test_interrupted_run_does_not_compound_gain(self):
         self.tuner.apply()
-        PositionGainTuner(self.path, self.drive).apply()
-        self.assertEqual(self.drive.position_gain, 120)
-        self.assertEqual([w[2] for w in self.drive.writes], [120, 80, 120])
+        GainTuner(self.path, self.drive).apply()
+        self.assertEqual(self.drive.speed_gain, 250)
+        self.assertEqual([w[2] for w in self.drive.writes], [250, 200, 250])
+
+    def test_old_position_backup_recovered_before_speed_trial(self):
+        self.drive.position_gain = 120
+        record = dict(version=1, identity=[0x100000, 0xc0130, self.drive.serial],
+                      original=80, trial=120)
+        with open(self.path, 'w') as f:
+            json.dump(record, f)
+        self.tuner.apply()
+        self.assertEqual(self.drive.position_gain, 80)
+        self.assertEqual(self.drive.speed_gain, 250)
+        self.assertEqual(self.drive.writes, [('0x2008', 3, 80), ('0x2008', 1, 250)])
+        self.tuner.restore()
+        self.assertEqual(self.drive.speed_gain, 200)
+        self.assertEqual(self.drive.position_gain, 80)
 
     def test_enabled_drive_refuses_write(self):
         self.drive.status = 0x27
@@ -106,14 +130,14 @@ class TuningTests(unittest.TestCase):
 
     def test_external_change_is_not_overwritten(self):
         self.tuner.apply()
-        self.drive.position_gain = 99
+        self.drive.speed_gain = 249
         with self.assertRaises(RuntimeError):
             self.tuner.restore()
         self.assertTrue(os.path.exists(self.path))
         self.assertEqual(len(self.drive.writes), 1)
 
     def test_range_failure_makes_no_write(self):
-        self.drive.position_gain = 19000
+        self.drive.speed_gain = 19000
         with self.assertRaises(RuntimeError):
             self.tuner.apply()
         self.assertEqual(self.drive.writes, [])

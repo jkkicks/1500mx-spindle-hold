@@ -3,8 +3,10 @@
 The untuned CSP hold has passed on the target and improved restoring force.
 Increasing position gain to 150% added return noise without noticeably reducing
 deflection. This revision instead keeps the original position gain and trials
-**125% of the original speed-loop gain**, with a live motor-error display. The
-new speed trial is offline-tested and still needs its first hardware run.
+**125% of the original speed-loop gain and 75% of the original speed integral
+time**, with a live motor-error display. The speed-only trial gave no noticeable
+holding improvement. The new P/I trial is offline-tested and still needs its
+first hardware run.
 
 ## Run on the target
 
@@ -24,12 +26,13 @@ There is no requirement to repeat `disabled`. The hold launcher also performs
 
 Plain `hold` automatically reads the live first-bank speed gain (0x2008:1),
 saves it locally, and applies **125% of that original value**, rounded to the
-nearest raw count. A 20.0 Hz baseline becomes 25.0 Hz. The position-gain boost
-has been removed: the original position gain is kept (8.0 Hz in the supplied
-configuration). Integral time is kept (4.00 ms in the supplied configuration).
-The actual position gain and integral time are read and displayed at startup;
-no fixed baseline is assumed. Second-bank gains, torque limits and filters
-are unchanged. No tuning arguments or manual SDO commands are needed.
+nearest raw count. A 20.0 Hz baseline becomes 25.0 Hz. The same hold also trials **75% of the
+original speed integral time (0x2008:2)**: a 4.00 ms baseline becomes 3.00 ms.
+Shortening this time strengthens integral action; it is not an increase to
+position proportional gain. The position-gain boost has been removed: the original position gain is kept (8.0 Hz in the supplied
+configuration). The original and trial speed gain/integral time and the
+unchanged position gain are displayed at startup; no fixed baseline is assumed.
+Second-bank gains, torque limits and filters are unchanged. No tuning arguments or manual SDO commands are needed.
 
 Wait for **CSP HOLD ENABLED** before assessing spindle rigidity. The command
 holds the current position; it does not request a new angle or a tool change.
@@ -42,27 +45,30 @@ another terminal in the same folder:
 bash ./spindle-test.sh off
 ```
 
-Normal exit first prints **Original speed gain restored and verified**,
-then **Spindle disabled; CSV mode 9 acknowledged; standalone session can
+Normal exit first prints **Original speed gain restored and verified** and
+**Original integral time restored and verified**, then **Spindle disabled; CSV mode 9 acknowledged; standalone session can
 close.** Wait for the launcher to exit before reopening PathPilot. `off` is a
 stop request, not a separate step needed after the hold terminal has closed.
 If disable or mode acknowledgement is unavailable, use the hardware E-stop
 and inspect the drive before restarting.
 
-The original gain is saved in `.position-gain-backup.json` before the first
+Both original values are saved in `.position-gain-backup.json` before the first
 SDO write. The legacy filename is retained so outstanding backups from the
-position-gain trials are automatically recovered before starting a speed trial. A normal stop, handled signal or setup failure attempts to restore
-it while the drive is disabled, before requesting CSV. Failed writes/readbacks
+position-only or speed-only trials are automatically recovered before starting
+a new speed/integral trial. A normal stop, handled signal or setup failure
+attempts to restore both values while disabled, before requesting CSV. Failed writes/readbacks
 abort enable. Failed restoration retains the file, reports failure and does
 not request CSV. Do not reopen PathPilot until restoration is confirmed.
 
 Power loss or a forced kill cannot guarantee immediate restoration. Keep the
 backup file: the next `hold` checks the drive identity/serial and recovers the
-saved original while disabled before starting a fresh trial. An unexpected
+saved originals while disabled before starting a fresh trial. An unexpected
 live gain or a different drive stops recovery rather than overwriting it.
 Do not delete the file to bypass a recovery error. `disabled` does not recover
 a pending tuning record. Repeated completed runs always start from the restored
-baseline, so the 25% speed-gain increase does not compound.
+baseline, so neither tuning adjustment compounds. A live integral time of
+512.00 ms (integral disabled) or a trial below the documented minimum is
+rejected before either setting is written.
 
 ## Sequence and boundaries
 
@@ -86,11 +92,11 @@ Mode/state/interlock loss requests a stop. A realtime latch gates the spindle
 control word on bus OP, STO feedback, drive fault, ATC air/VFD interlocks,
 supervisor permit and a one-second heartbeat watchdog. A lost heartbeat or
 interlock drops the control word to zero. Normal exit confirms disabled state
-and restores/verifies the original speed gain before requesting and
+and restores/verifies the original speed gain and integral time before requesting and
 acknowledging CSV mode 9. Hardware STO/E-stop remains
 available independently of this software test.
 
-Only 0x2008:1 is downloaded for the speed trial and restoration. Recovery of
+Only 0x2008:1 and 0x2008:2 are downloaded for this P/I trial and restoration. Recovery of
 an outstanding old position-gain backup may also restore 0x2008:3. No
 EEPROM-save command, mask, gearing or other tuning-parameter write is sent.
 60FE:2 may be zero or 0x04010000 and is preserved. DO2 remains drive-controlled
@@ -166,9 +172,10 @@ or realtime transport behavior. Tuning tests also cover durable backup before
 writes, live-baseline scaling, readback failures, ambiguous-write recovery,
 non-compounding retries, drive identity, external changes, disabled-state
 requirements, restoration before CSV, and recovery of the old position-gain
-backup format. Display tests cover signed error, counter rollover, sampled
-peaks between display updates, terminal throttling and redirected output. The trial factor is
-`SPEED_GAIN_PERCENT = 125` in tuning.py; later trials change that constant
+and speed-only backup formats, second-write failures, partial restoration,
+and disabled/out-of-range integral settings. Display tests cover signed error, counter rollover, sampled
+peaks between display updates, terminal throttling and redirected output. The trial factors are
+`SPEED_GAIN_PERCENT = 125` and `INTEGRAL_TIME_PERCENT = 75` in tuning.py; later trials change those constants
 in a reviewed revision rather than increasing it automatically on each run.
 
 ## Updating a Git checkout on the controller

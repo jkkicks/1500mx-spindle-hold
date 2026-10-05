@@ -4,7 +4,7 @@ import os
 import subprocess
 
 # Change this in a later revision after evaluating the preceding trial.
-POSITION_GAIN_PERCENT = 125
+POSITION_GAIN_PERCENT = 150
 GAIN_INDEX = '0x2008'
 GAIN_SUBINDEX = 3
 
@@ -115,8 +115,8 @@ class PositionGainTuner:
             raise RuntimeError('Live position gain is outside the supported range')
         trial = (original * POSITION_GAIN_PERCENT + 50) // 100
         if not original < trial <= 20000:
-            raise RuntimeError('25% trial is outside the supported range or rounds to no increase')
+            raise RuntimeError('Position-gain trial is outside the supported range or rounds to no increase')
         self.save(dict(version=1, identity=identity, original=original, trial=trial))
         self.set_verified(trial)
-        print('Temporary position gain: {:.1f} -> {:.1f} Hz (+25%); speed gain and integral time unchanged.'.format(
-            original / 10., trial / 10.), flush=True)
+        print('Temporary position gain: {:.1f} -> {:.1f} Hz (+{}%); speed gain and integral time unchanged.'.format(
+            original / 10., trial / 10., POSITION_GAIN_PERCENT - 100), flush=True)

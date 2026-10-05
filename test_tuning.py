@@ -52,18 +52,18 @@ class TuningTests(unittest.TestCase):
     def test_live_baseline_and_verified_restore(self):
         self.drive.position_gain = 120
         self.tuner.apply()
-        self.assertEqual(self.drive.position_gain, 150)
+        self.assertEqual(self.drive.position_gain, 180)
         self.assertTrue(os.path.exists(self.path))
         self.tuner.restore()
         self.assertEqual(self.drive.position_gain, 120)
         self.assertFalse(os.path.exists(self.path))
-        self.assertEqual(self.drive.writes, [('0x2008', 3, 150), ('0x2008', 3, 120)])
+        self.assertEqual(self.drive.writes, [('0x2008', 3, 180), ('0x2008', 3, 120)])
 
     def test_recover_ambiguous_write(self):
         self.drive.fail_download_after_write = True
         with self.assertRaises(RuntimeError):
             self.tuner.apply()
-        self.assertEqual(self.drive.position_gain, 100)
+        self.assertEqual(self.drive.position_gain, 120)
         self.assertTrue(os.path.exists(self.path))
         PositionGainTuner(self.path, self.drive).restore()
         self.assertEqual(self.drive.position_gain, 80)
@@ -72,8 +72,8 @@ class TuningTests(unittest.TestCase):
     def test_interrupted_run_does_not_compound_gain(self):
         self.tuner.apply()
         PositionGainTuner(self.path, self.drive).apply()
-        self.assertEqual(self.drive.position_gain, 100)
-        self.assertEqual([w[2] for w in self.drive.writes], [100, 80, 100])
+        self.assertEqual(self.drive.position_gain, 120)
+        self.assertEqual([w[2] for w in self.drive.writes], [120, 80, 120])
 
     def test_enabled_drive_refuses_write(self):
         self.drive.status = 0x27

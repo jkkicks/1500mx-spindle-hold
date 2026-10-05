@@ -2,9 +2,9 @@
 
 `hold` is enabled in this revision. The standalone disabled session has passed
 on the target controller. The untuned powered hold has now passed on the target and substantially
-improved the observed restoring force. This revision adds a temporary +25%
-position-gain trial; that tuning/restore sequence is offline-tested and still
-needs its first hardware run.
+improved the observed restoring force. The +25% position-gain trial and restoration passed on the target, with no
+notable additional rigidity reported. This revision trials +50% over the
+original live baseline; it still needs a hardware run.
 
 ## Run on the target
 
@@ -23,8 +23,8 @@ There is no requirement to repeat `disabled`. The hold launcher also performs
 `check` itself. Run `hold` in an interactive terminal.
 
 Plain `hold` automatically reads the live first-bank position gain (0x2008:3),
-saves it locally, and applies **125% of that original value**, rounded to the
-nearest raw count. An 8.0 Hz baseline becomes 10.0 Hz. Speed gain, integral
+saves it locally, and applies **150% of that original value**, rounded to the
+nearest raw count. An 8.0 Hz baseline becomes 12.0 Hz. Speed gain, integral
 time, second-bank gains and torque limits are unchanged. No tuning arguments
 or manual SDO commands are needed. The displayed values are readback-verified.
 
@@ -58,7 +58,7 @@ saved original while disabled before starting a fresh trial. An unexpected
 live gain or a different drive stops recovery rather than overwriting it.
 Do not delete the file to bypass a recovery error. `disabled` does not recover
 a pending tuning record. Repeated completed runs always start from the restored
-baseline, so the 25% increase does not compound.
+baseline, so the 50% increase does not compound.
 
 ## Sequence and boundaries
 
@@ -134,7 +134,7 @@ or realtime transport behavior. Tuning tests also cover durable backup before
 writes, live-baseline scaling, readback failures, ambiguous-write recovery,
 non-compounding retries, drive identity, external changes, disabled-state
 requirements, and restoration before CSV. The trial factor is
-`POSITION_GAIN_PERCENT = 125` in tuning.py; later trials change that constant
+`POSITION_GAIN_PERCENT = 150` in tuning.py; later trials change that constant
 in a reviewed revision rather than increasing it automatically on each run.
 
 ## Updating a Git checkout on the controller

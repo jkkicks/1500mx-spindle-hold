@@ -40,6 +40,9 @@ check() {
  local vendor product target_velocity position_offset gain_mode output_mask contactor_function contactor_logic
  [[ -x "$PYRUN" && -x "$HALCMD" ]] || { echo 'Missing PathPilot runtime. Set PP_ROOT to the active target runtime.' >&2; return 1; }
  command -v ethercat >/dev/null || { echo 'ethercat utility not available in this runtime environment.' >&2; return 1; }
+ if [[ -e "$HERE/.position-gain-backup.json" ]]; then
+   echo "Pending gain restore record found; hold will recover it before enabling."
+ fi
  echo "Checking runtime $PP_ROOT and SV670N at EtherCAT bus 0, position 0..."
  vendor=$(upload uint32 0x1018 1) || return "$?"
  [[ "$vendor" == 1048576 ]] || { echo "Unexpected spindle vendor: $vendor (expected 1048576)." >&2; return 1; }
@@ -68,7 +71,8 @@ Reuse the target PDO generator; do not start the full-mill drive manager.
 Every drive control word remains zero. Preserve the current spindle mode/mask.
 Confirm feedback and Switch On Disabled, print a snapshot, then release HAL.
 hold captures the current position and enables CSP on the spindle only.
-Enter, Ctrl+C, or off requests disable, then CSV mode 9 before HAL closes.
+hold automatically trials +25% position gain; speed/integral gains unchanged.
+Enter, Ctrl+C, or off requests disable, verified gain restore, then CSV mode 9.
 PLAN
  ;;
  check) check ;;
@@ -107,8 +111,8 @@ PLAN
    if [[ "$owned" == 1 ]]; then
      "$HALCMD" setp csp-test-ui.stop true 2>/dev/null || true
      if [[ -n "$supervisor" ]]; then
-       # Supervisor handles stop and confirms disable in at most ~4 seconds.
-       for ((n=0;n<60;n++)); do
+       # Allow bounded SDO restore/readback to finish before releasing EtherCAT.
+       for ((n=0;n<500;n++)); do
          kill -0 "$supervisor" 2>/dev/null || break
          sleep .1
        done

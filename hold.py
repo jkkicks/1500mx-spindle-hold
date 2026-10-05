@@ -9,11 +9,12 @@ class StopRequested(Exception):
     pass
 
 class HoldTest:
-    def __init__(self, pins, sleep=time.sleep, clock=time.monotonic, parent_alive=lambda: True):
+    def __init__(self, pins, sleep=time.sleep, clock=time.monotonic, parent_alive=lambda: True, tuner=None):
         self.p = pins
         self.sleep = sleep
         self.clock = clock
         self.parent_alive = parent_alive
+        self.tuner = tuner
 
     def tick(self):
         self.p['heartbeat'] = not self.p['heartbeat']
@@ -50,6 +51,13 @@ class HoldTest:
         # satisfy the subsequent mode-8 handshake. Raw velocity units are not
         # assumed; the operator starts with a stationary spindle.
         self.wait(lambda: self.p['mode-fb'] == 9, 'initial CSV acknowledgement')
+        if self.tuner is not None:
+            # No latch permit while potentially blocking on SDO mailbox I/O.
+            self.p['permit'] = False
+            self.tuner.apply()
+            self.p['permit'] = True
+            self.wait(lambda: self.p['oper'] and self.p['health'],
+                      'interlocks after temporary tuning')
         self.p['reset'] = True
         self.wait(lambda: self.p['allowed'], 'realtime stop latch reset')
         self.p['reset'] = False
@@ -120,6 +128,8 @@ class HoldTest:
             if self.p['oper'] and (self.p['status'] & 0x6f) == 0x40:
                 if not restore_csv:
                     return True
+                if self.tuner is not None:
+                    self.tuner.restore()
                 self.p['mode-request'] = 9
                 # Mode acknowledgement may lag. Normal PP reinitializes it too.
                 deadline2 = self.clock() + 1.
@@ -157,7 +167,10 @@ def main():
     signal.signal(signal.SIGHUP, interrupted)
     launcher_pid = int(os.environ.get('CSP_LAUNCHER_PID', os.getppid()))
     parent_alive = lambda: os.getppid() == launcher_pid
-    test = HoldTest(c, parent_alive=parent_alive)
+    from tuning import PositionGainTuner
+    tuner = PositionGainTuner(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         '.position-gain-backup.json')) if powered else None
+    test = HoldTest(c, parent_alive=parent_alive, tuner=tuner)
     started = False
     result = 0
     try:
@@ -182,12 +195,20 @@ def main():
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
         if started:
-            if test.disable(restore_csv=powered):
-                print('Spindle disabled{}; standalone session can close.'.format(
-                    '; CSV mode 9 acknowledged' if powered else ''), flush=True)
-            else:
-                print('Disable or mode-restore acknowledgement unavailable. Use hardware E-stop; inspect drive before restarting.', file=sys.stderr, flush=True)
+            try:
+                disabled = test.disable(restore_csv=powered)
+                if disabled:
+                    print('Spindle disabled{}; standalone session can close.'.format(
+                        '; CSV mode 9 acknowledged' if powered else ''), flush=True)
+                else:
+                    print('Disable or mode-restore acknowledgement unavailable. Use hardware E-stop; inspect drive before restarting.', file=sys.stderr, flush=True)
+                    result = 1
+            except Exception as exc:
+                print('TUNING RESTORE FAILED: {}. Backup retained; do not restart PathPilot. Rerun hold after resolving the failure to recover the original gain.'.format(exc), file=sys.stderr, flush=True)
                 result = 1
+        if tuner is not None and os.path.exists(tuner.path):
+            print('Original gain restoration is still pending in {}. Do not delete this file or restart PathPilot until restoration succeeds.'.format(tuner.path), file=sys.stderr, flush=True)
+            result = 1
         c.exit()
     return result
 

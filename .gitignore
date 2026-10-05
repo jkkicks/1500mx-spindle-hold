@@ -11,3 +11,6 @@ spindle-check.txt
 spindle-disabled.txt
 *.log
 output.txt
+
+# Machine-specific gain restoration record; never commit or delete to bypass recovery
+.position-gain-backup.json

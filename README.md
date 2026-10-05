@@ -1,8 +1,10 @@
 # SV670N stationary spindle hold
 
 `hold` is enabled in this revision. The standalone disabled session has passed
-on the target controller. The powered sequence has passed offline tests; its
-first powered hardware run is still a commissioning test.
+on the target controller. The untuned powered hold has now passed on the target and substantially
+improved the observed restoring force. This revision adds a temporary +25%
+position-gain trial; that tuning/restore sequence is offline-tested and still
+needs its first hardware run.
 
 ## Run on the target
 
@@ -20,8 +22,15 @@ bash ./spindle-test.sh hold
 There is no requirement to repeat `disabled`. The hold launcher also performs
 `check` itself. Run `hold` in an interactive terminal.
 
+Plain `hold` automatically reads the live first-bank position gain (0x2008:3),
+saves it locally, and applies **125% of that original value**, rounded to the
+nearest raw count. An 8.0 Hz baseline becomes 10.0 Hz. Speed gain, integral
+time, second-bank gains and torque limits are unchanged. No tuning arguments
+or manual SDO commands are needed. The displayed values are readback-verified.
+
 Wait for **CSP HOLD ENABLED** before assessing spindle rigidity. The command
 holds the current position; it does not request a new angle or a tool change.
+Stop if the new gain produces buzzing, hunting or oscillation.
 
 Press **Enter** or **Ctrl+C** in the hold terminal to stop. Alternatively, from
 another terminal in the same folder:
@@ -30,11 +39,26 @@ another terminal in the same folder:
 bash ./spindle-test.sh off
 ```
 
-Wait for **Spindle disabled; CSV mode 9 acknowledged; standalone session can
+Normal exit first prints **Original position gain restored and verified**,
+then **Spindle disabled; CSV mode 9 acknowledged; standalone session can
 close.** and for the launcher to exit before reopening PathPilot. `off` is a
 stop request, not a separate step needed after the hold terminal has closed.
 If disable or mode acknowledgement is unavailable, use the hardware E-stop
 and inspect the drive before restarting.
+
+The original gain is saved in `.position-gain-backup.json` before the first
+SDO write. A normal stop, handled signal or setup failure attempts to restore
+it while the drive is disabled, before requesting CSV. Failed writes/readbacks
+abort enable. Failed restoration retains the file, reports failure and does
+not request CSV. Do not reopen PathPilot until restoration is confirmed.
+
+Power loss or a forced kill cannot guarantee immediate restoration. Keep the
+backup file: the next `hold` checks the drive identity/serial and recovers the
+saved original while disabled before starting a fresh trial. An unexpected
+live gain or a different drive stops recovery rather than overwriting it.
+Do not delete the file to bypass a recovery error. `disabled` does not recover
+a pending tuning record. Repeated completed runs always start from the restored
+baseline, so the 25% increase does not compound.
 
 ## Sequence and boundaries
 
@@ -47,7 +71,9 @@ I/O outputs remain zero.
 The supervisor first confirms Switch On Disabled and CSV mode 9. It captures
 the raw actual position as a fixed target, requests CSP mode 8, confirms the
 new mode acknowledgement, and steps through Shutdown, Switch On and Operation
-Enabled with status acknowledgement at each step. A captured target differing
+Enabled with status acknowledgement at each step. Temporary tuning is applied
+and verified before resetting the enable latch, with permit false and the drive
+confirmed Switch On Disabled. A captured target differing
 from actual position by more than 1000 raw counts aborts before Operation
 Enabled. The unverified raw velocity threshold has been removed. This test
 assumes the operator starts with a stationary spindle.
@@ -56,10 +82,12 @@ Mode/state/interlock loss requests a stop. A realtime latch gates the spindle
 control word on bus OP, STO feedback, drive fault, ATC air/VFD interlocks,
 supervisor permit and a one-second heartbeat watchdog. A lost heartbeat or
 interlock drops the control word to zero. Normal exit confirms disabled state
-before requesting and acknowledging CSV mode 9. Hardware STO/E-stop remains
+and restores/verifies the original position gain before requesting and
+acknowledging CSV mode 9. Hardware STO/E-stop remains
 available independently of this software test.
 
-No mask, gain, gearing or other tuning-parameter download is performed.
+Only 0x2008:3 is downloaded for the temporary trial and restoration. No
+EEPROM-save command, mask, gearing or other tuning-parameter write is sent.
 60FE:2 may be zero or 0x04010000 and is preserved. DO2 remains drive-controlled
 ALM/contactor with 2004:3=11 and 2004:4=1. The gain-switchover PDO is low,
 matching the supplied orient implementation. With a zero mask, no effective
@@ -93,6 +121,7 @@ Do not source the launcher; run it with bash.
 ```bash
 python3 test_offline.py
 python3 test_launcher.py
+python3 test_tuning.py
 bash -n spindle-test.sh
 ```
 
@@ -101,7 +130,12 @@ including an old mode-8 acknowledgement, captured-target movement, large raw
 velocity with a stationary target, CSV restore acknowledgement, stop,
 interlock/launcher loss, XML checks, interactive-terminal requirements,
 sourcing protection and read failures. They do not establish physical drive
-or realtime transport behavior.
+or realtime transport behavior. Tuning tests also cover durable backup before
+writes, live-baseline scaling, readback failures, ambiguous-write recovery,
+non-compounding retries, drive identity, external changes, disabled-state
+requirements, and restoration before CSV. The trial factor is
+`POSITION_GAIN_PERCENT = 125` in tuning.py; later trials change that constant
+in a reviewed revision rather than increasing it automatically on each run.
 
 ## Updating a Git checkout on the controller
 

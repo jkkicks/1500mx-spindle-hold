@@ -1,0 +1,65 @@
+# Loaded only in an exclusive standalone session. XML loaded by launcher first.
+loadrt threads name1=spindle-test-thread period1=1000000 fp1=1
+loadrt lcec
+loadrt mux2_s32 names=hold-position
+loadrt mux2_u32 names=hold-control
+loadrt oneshot names=hold-watchdog
+loadrt match8 names=hold-health
+loadrt estop_latch names=hold-latch
+
+# All unconnected non-spindle control words and I/O outputs remain zero.
+net hold-actual lcec.0.0.feedback-position => hold-position.in0 csp-test-ui.actual
+net hold-target hold-position.out => hold-position.in1 lcec.0.0.command-position csp-test-ui.target
+net hold-capture csp-test-ui.capture => hold-position.sel
+net hold-mode csp-test-ui.mode-request => lcec.0.0.command-mode
+net hold-mode-fb lcec.0.0.feedback-drive-mode => csp-test-ui.mode-fb
+net hold-status lcec.0.0.status-word => csp-test-ui.status
+net hold-velocity lcec.0.0.feedback-velocity => csp-test-ui.velocity
+setp lcec.0.0.ff-velocity 0
+setp lcec.0.0.ff-torque 0
+# Same PDO torque limits as the supplied main HAL; no SDO gain changes.
+setp lcec.0.0.command-torque-limit-fw 3000
+setp lcec.0.0.command-torque-limit-rev 3000
+# ethercat_orient metadata: low during orient enables integral action.
+setp lcec.0.0.gain-switchover false
+setp lcec.0.0.do1 false
+# DO2 remains a drive-controlled ALM/contactor output, not forced by EtherCAT.
+
+net hold-heartbeat csp-test-ui.heartbeat => hold-watchdog.in
+setp hold-watchdog.rising true
+setp hold-watchdog.falling true
+setp hold-watchdog.retriggerable true
+setp hold-watchdog.width 1.0
+net hold-watchdog-ok hold-watchdog.out => hold-health.a3
+setp hold-health.b3 true
+net hold-permit csp-test-ui.permit => hold-health.a4
+setp hold-health.b4 true
+net hold-oper lcec.0.0.slave-oper => hold-health.a0 csp-test-ui.oper
+setp hold-health.b0 true
+net hold-edm lcec.0.0.edm => hold-health.a1
+setp hold-health.b1 false
+net hold-fault lcec.0.0.sw03-fault => hold-health.a2
+setp hold-health.b2 false
+# Preserve the supplied exchange-arm air/fault interlock, without enabling ATC.
+net hold-air lcec.0.170:0.atc-air-pressure => hold-health.a5
+setp hold-health.b5 true
+net hold-mag-fault lcec.0.170:0.mag-vfd-fault => hold-health.a6
+setp hold-health.b6 false
+net hold-arm-fault lcec.0.170:0.arm-vfd-fault => hold-health.a7
+setp hold-health.b7 false
+setp hold-health.in true
+net hold-health-ok hold-health.out => hold-latch.ok-in csp-test-ui.health
+net hold-reset csp-test-ui.reset => hold-latch.reset
+net hold-allowed hold-latch.ok-out => hold-control.sel csp-test-ui.allowed
+net hold-cw-request csp-test-ui.cw-request => hold-control.in1
+setp hold-control.in0 0
+net hold-cw hold-control.out => lcec.0.0.control-word
+
+addf lcec.read-all spindle-test-thread
+addf hold-position spindle-test-thread
+addf hold-watchdog spindle-test-thread
+addf hold-health spindle-test-thread
+addf hold-latch spindle-test-thread
+addf hold-control spindle-test-thread
+addf lcec.write-all spindle-test-thread
+start

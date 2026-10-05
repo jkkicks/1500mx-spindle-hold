@@ -1,0 +1,13 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Standalone session state and generated machine mapping
+.session-lock
+last-ethercat.xml
+
+# Local hardware diagnostics
+spindle-check.txt
+spindle-disabled.txt
+*.log
+output.txt

@@ -1,0 +1,24 @@
+# Disabled-only validation. No path exists from supervisor to any control word.
+loadrt threads name1=spindle-test-thread period1=1000000 fp1=1
+loadrt lcec
+loadrt mux2_s32 names=disabled-position
+
+# ZERO is the only spindle control-word value this file ever commands.
+# Other drives have no writers; their output control words default to zero.
+setp lcec.0.0.control-word 0
+net disabled-mode csp-test-ui.mode-request => lcec.0.0.command-mode
+net disabled-actual lcec.0.0.feedback-position => disabled-position.in0 csp-test-ui.actual
+setp disabled-position.sel false
+setp disabled-position.in1 0
+net disabled-target disabled-position.out => lcec.0.0.command-position csp-test-ui.target
+net disabled-mode-fb lcec.0.0.feedback-drive-mode => csp-test-ui.mode-fb
+net disabled-status lcec.0.0.status-word => csp-test-ui.status
+net disabled-velocity lcec.0.0.feedback-velocity => csp-test-ui.velocity
+net disabled-oper lcec.0.0.slave-oper => csp-test-ui.oper
+setp lcec.0.0.ff-velocity 0
+setp lcec.0.0.ff-torque 0
+# All digital outputs default to zero. No gain-switchover or mask write.
+addf lcec.read-all spindle-test-thread
+addf disabled-position spindle-test-thread
+addf lcec.write-all spindle-test-thread
+start

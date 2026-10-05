@@ -49,7 +49,8 @@ net hold-arm-fault lcec.0.170:0.arm-vfd-fault => hold-health.a7
 setp hold-health.b7 false
 setp hold-health.in true
 net hold-health-ok hold-health.out => hold-latch.ok-in csp-test-ui.health
-net hold-reset csp-test-ui.reset => hold-latch.reset
+# Both reset pins are HAL_IO; the latch consumes/clears the reset request.
+net hold-reset csp-test-ui.reset <=> hold-latch.reset
 net hold-allowed hold-latch.ok-out => hold-control.sel csp-test-ui.allowed
 net hold-cw-request csp-test-ui.cw-request => hold-control.in1
 setp hold-control.in0 0

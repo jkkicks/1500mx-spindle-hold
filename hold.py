@@ -140,10 +140,13 @@ def main():
               ('velocity', hal.HAL_S32), ('oper', hal.HAL_BIT),
               ('health', hal.HAL_BIT), ('allowed', hal.HAL_BIT)]
     outputs = [('heartbeat', hal.HAL_BIT), ('permit', hal.HAL_BIT),
-               ('reset', hal.HAL_BIT), ('capture', hal.HAL_BIT),
+               ('capture', hal.HAL_BIT),
                ('cw-request', hal.HAL_U32), ('mode-request', hal.HAL_S32)]
     for name, typ in inputs: c.newpin(name, typ, hal.HAL_IN)
     for name, typ in outputs: c.newpin(name, typ, hal.HAL_OUT)
+    # estop_latch.reset is HAL_IO and clears its reset request itself.
+    # Share an IO signal; connecting an OUT writer to the latch IO is invalid.
+    c.newpin('reset', hal.HAL_BIT, hal.HAL_IO)
     c['mode-request'] = int(os.environ.get('CSP_INITIAL_MODE', '9'))
     c.ready()
     def interrupted(signum, frame):

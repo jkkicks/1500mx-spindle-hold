@@ -10,7 +10,7 @@ class Fake:
     def __init__(self):
         self.now = 0.
         self.p = dict((n, 0) for n in ('heartbeat','stop','cw-request','mode-request',
-                      'permit','reset','capture','velocity','allowed','target'))
+                      'permit','reset','capture','velocity','torque-actual','allowed','target'))
         self.p.update(actual=123456, oper=True, health=True, status=0x40, **{'mode-fb':9})
         self.words = []
         self.stale_mode = False
@@ -97,7 +97,7 @@ class XmlTests(unittest.TestCase):
                  ('control-word',0x6040,'u32'),('status-word',0x6041,'u32'),
                  ('command-mode',0x6060,'s32'),('feedback-drive-mode',0x6061,'s32'),
                  ('ff-velocity',0x60b1,'s32'),('ff-torque',0x60b2,'s32'),
-                 ('feedback-velocity',0x606c,'s32'),('command-torque-limit-fw',0x60e0,'u32'),
+                 ('feedback-velocity',0x606c,'s32'),('feedback-torque',0x6077,'s32'),('command-torque-limit-fw',0x60e0,'u32'),
                  ('command-torque-limit-rev',0x60e1,'u32')]
         for name,ix,typ in entries:ET.SubElement(s,'pdoEntry',halPin=name,idx=str(ix),subIdx='0',halType=typ)
         for name in ('edm','sw03-fault','do1','gain-switchover'):ET.SubElement(s,'complexEntry',halPin=name)
@@ -118,6 +118,12 @@ class XmlTests(unittest.TestCase):
     def test_wrong_drive(self):
         r=self.fixture();r.find('master/slave').set('pid',str(0xc011e))
         with self.assertRaises(ValueError):self.check(r)
+    def test_unsigned_torque_mapping_is_rejected(self):
+        r=self.fixture()
+        for entry in r.iter('pdoEntry'):
+            if entry.get('halPin') == 'feedback-torque':entry.set('halType','U32')
+        with self.assertRaises(ValueError):self.check(r)
+
     def test_wrong_target(self):
         r=self.fixture();r.find('master/slave/pdoEntry').set('idx',str(0x6064))
         with self.assertRaises(ValueError):self.check(r)

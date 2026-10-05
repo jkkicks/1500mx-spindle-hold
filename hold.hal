@@ -15,6 +15,7 @@ net hold-mode csp-test-ui.mode-request => lcec.0.0.command-mode
 net hold-mode-fb lcec.0.0.feedback-drive-mode => csp-test-ui.mode-fb
 net hold-status lcec.0.0.status-word => csp-test-ui.status
 net hold-velocity lcec.0.0.feedback-velocity => csp-test-ui.velocity
+net hold-torque lcec.0.0.feedback-torque => csp-test-ui.torque-actual
 setp lcec.0.0.ff-velocity 0
 setp lcec.0.0.ff-torque 0
 # Same PDO torque limits as the supplied main HAL; no SDO gain changes.

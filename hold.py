@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Stationary CSP hold supervisor; only shipped realtime HAL modules required."""
 import os
+import csv
 import signal
 import sys
 import time
@@ -11,7 +12,7 @@ def position_error(actual, target):
 
 
 class MotorErrorReadout:
-    def __init__(self, stream=None, clock=time.monotonic):
+    def __init__(self, stream=None, clock=time.monotonic, log=None):
         self.stream = sys.stdout if stream is None else stream
         self.clock = clock
         self.live = self.stream.isatty()
@@ -19,19 +20,40 @@ class MotorErrorReadout:
         self.next_print = 0.
         self.peak = 0
         self.displayed = False
+        self.peak_torque = 0
+        self.started = self.clock()
+        self.log = log
+        self.last_flush = self.started
+        self.writer = csv.writer(log) if log is not None else None
+        if self.writer is not None:
+            self.writer.writerow(['time_s', 'actual', 'target', 'error_counts',
+                                  'torque_raw', 'torque_percent', 'status_word',
+                                  'internal_limit_active'])
 
-    def sample(self, actual, target):
+    def sample(self, actual, target, torque=0, status=0):
         error = position_error(actual, target)
         self.peak = max(self.peak, abs(error))
+        self.peak_torque = max(self.peak_torque, abs(torque))
         now = self.clock()
+        limited = bool(status & 0x800)
+        if self.writer is not None:
+            self.writer.writerow(['{:.6f}'.format(now - self.started), actual, target,
+                                  error, torque, '{:.1f}'.format(torque / 10.),
+                                  '0x{:04x}'.format(status), int(limited)])
+            if now - self.last_flush >= 1.:
+                self.log.flush()
+                self.last_flush = now
         if now >= self.next_print:
-            line = 'Motor error: {:+9d} counts | sampled peak: {:9d} counts'.format(error, self.peak)
+            line = 'Motor err: {:+8d} ct | Tq: {:+6.1f}% | Lim: {} | Peak: {:8d} ct'.format(
+                error, torque / 10., 'Y' if limited else 'N', self.peak)
             self.stream.write(('\r' + line) if self.live else (line + '\n'))
             self.stream.flush()
             self.displayed = True
             self.next_print = now + self.interval
 
     def finish(self):
+        if self.log is not None:
+            self.log.flush()
         if self.live and self.displayed:
             self.stream.write('\n')
             self.stream.flush()
@@ -115,15 +137,21 @@ class HoldTest:
     def hold(self):
         self.enable()
         print('CSP HOLD ENABLED. Press Enter in the launcher or run ./spindle-test.sh off.', flush=True)
-        readout = MotorErrorReadout(clock=self.clock)
-        try:
-            while True:
-                self.tick()
-                if not self.p['allowed'] or self.p['mode-fb'] != 8 or (self.p['status'] & 0x6f) != 0x27:
-                    raise RuntimeError('Holding interrupted by mode/state/interlock change')
-                readout.sample(self.p['actual'], self.p['target'])
-        finally:
-            readout.finish()
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'last-hold.csv')
+        print('Recording motor error and actual torque to ' + path, flush=True)
+        with open(path, 'w', newline='') as log:
+            readout = MotorErrorReadout(clock=self.clock, log=log)
+            try:
+                while True:
+                    self.tick()
+                    if not self.p['allowed'] or self.p['mode-fb'] != 8 or (self.p['status'] & 0x6f) != 0x27:
+                        raise RuntimeError('Holding interrupted by mode/state/interlock change')
+                    readout.sample(self.p['actual'], self.p['target'],
+                                   self.p['torque-actual'], self.p['status'])
+            finally:
+                readout.finish()
+                print('Sampled peaks: motor error={} counts, actual torque={:.1f}% of motor rated torque.'.format(
+                    readout.peak, readout.peak_torque / 10.), flush=True)
 
     def disabled_only(self):
         self.p['cw-request'] = 0
@@ -184,7 +212,8 @@ def main():
     inputs = [('begin', hal.HAL_BIT), ('stop', hal.HAL_BIT),
               ('actual', hal.HAL_S32), ('target', hal.HAL_S32),
               ('mode-fb', hal.HAL_S32), ('status', hal.HAL_U32),
-              ('velocity', hal.HAL_S32), ('oper', hal.HAL_BIT),
+              ('velocity', hal.HAL_S32), ('torque-actual', hal.HAL_S32),
+              ('oper', hal.HAL_BIT),
               ('health', hal.HAL_BIT), ('allowed', hal.HAL_BIT)]
     outputs = [('heartbeat', hal.HAL_BIT), ('permit', hal.HAL_BIT),
                ('capture', hal.HAL_BIT),

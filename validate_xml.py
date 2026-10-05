@@ -24,6 +24,7 @@ def validate(path):
                 'command-mode': (0x6060, 0, 's32'), 'feedback-drive-mode': (0x6061, 0, 's32'),
                 'ff-velocity': (0x60b1, 0, 's32'), 'ff-torque': (0x60b2, 0, 's32'),
                 'feedback-velocity': (0x606c, 0, 's32'),
+                'feedback-torque': (0x6077, 0, 's32'),
                 'command-torque-limit-fw': (0x60e0, 0, 'u32'),
                 'command-torque-limit-rev': (0x60e1, 0, 'u32')}
     for name, value in expected.items():

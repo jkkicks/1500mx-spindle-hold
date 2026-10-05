@@ -4,7 +4,7 @@ The untuned CSP hold has passed on the target and improved restoring force.
 Increasing position gain to 150% added return noise without noticeably reducing
 deflection. This revision instead keeps the original position gain and trials
 **125% of the original speed-loop gain and 75% of the original speed integral
-time**, with a live motor-error display. The speed-only trial gave no noticeable
+time**, with a live motor-error/torque display. The speed-only trial gave no noticeable
 holding improvement. The new P/I trial is offline-tested and still needs its
 first hardware run.
 
@@ -105,23 +105,28 @@ matching the supplied orient implementation. With a zero mask, no effective
 forced P/PI override is assumed. Rigidity improvement is to be determined by
 the test, not guaranteed by selecting CSP.
 
-## Live motor-position error
+## Live motor-position error and actual torque
 
 After CSP HOLD ENABLED the terminal updates one line:
 
 ```text
-Motor error:      +125 counts | sampled peak:       250 counts
+Motor err:     +125 ct | Tq:  -12.3% | Lim: N | Peak:      250 ct
 ```
 
 Error is **actual position minus the fixed captured target**, with signed
-32-bit counter rollover handled. The sign indicates direction. The sampled
+32-bit counter rollover handled. The sign indicates direction. Torque is
+the drive-reported actual motor torque (6077h), scaled as percent of rated
+motor torque: raw 1000 means 100%. This is not spindle-side torque in Nm.
+Lim is status-word bit 11, internal limit active; it can indicate limits other
+than torque and does not establish saturation by itself. The sampled
 peak is the largest absolute error seen during this hold, starting after
 Operation Enabled; it resets for each run. Feedback is sampled at about 20 Hz
 and displayed at 5 Hz in a terminal. Redirected output uses one line per second.
 The peak is sampled, not a guaranteed capture of every transient.
 
-The readout uses existing PDO feedback and performs no SDO transactions while
-holding. It reports raw drive position counts, not spindle millimeters or
+The readout uses existing position and torque PDO feedback and performs no
+SDO transactions while holding. The XML validator also requires feedback-torque
+to map signed 6077h. No extra PDO mapping is added. It reports raw drive position counts, not spindle millimeters or
 degrees; pulley/gearing conversion is deliberately omitted. It neither changes
 the target nor adds a new stop threshold during the feel test.
 
@@ -130,6 +135,34 @@ that points toward compliance or play between motor feedback and spindle.
 If motor error rises with the movement, the servo loop is also yielding. This
 readout does not measure spindle-side displacement or identify a specific
 mechanical fault by itself.
+
+### Short diagnostic test
+
+Run the normal hold command. Wait for CSP HOLD ENABLED, leave it untouched
+for about three seconds, apply moderate pressure at a consistent point for
+three seconds, then release for three seconds. Repeat in the opposite direction.
+Use the same leverage between tests; trying to find maximum force is not needed.
+Press Enter to disable and restore.
+
+`last-hold.csv` records elapsed time, actual/target positions, signed error,
+signed actual torque (raw and percent rated), status word and internal-limit
+flag at approximately 20 samples/second. It is flushed about once a second and
+on normal stop. Each new powered hold overwrites this file, so copy a recording
+you want to keep before running another test. It is ignored by Git.
+
+This capture helps distinguish sustained position error, torque building or
+plateauing, and physical spindle movement with little motor error. Torque near
+the requested 300% ceiling while motor error grows suggests saturation.
+A lower plateau can reflect another drive limit; Lim alone does not identify it.
+Small motor error with visible spindle displacement points toward mechanical
+compliance. Rising motor error with a delayed torque increase motivates checking
+integral action, filtering and control selection.
+
+The pressure is manually applied and not measured. Samples are userspace PDO
+snapshots at about 20 Hz, not guaranteed same-cycle captures. The recording
+cannot establish millisecond-scale loop latency or an absolute stiffness value.
+If the first capture is inconclusive, a faster synchronous capture is the next
+step. Torque reported by the drive is not an independent force measurement.
 
 ## Target and portability
 
@@ -174,7 +207,8 @@ non-compounding retries, drive identity, external changes, disabled-state
 requirements, restoration before CSV, and recovery of the old position-gain
 and speed-only backup formats, second-write failures, partial restoration,
 and disabled/out-of-range integral settings. Display tests cover signed error, counter rollover, sampled
-peaks between display updates, terminal throttling and redirected output. The trial factors are
+peaks between display updates, terminal throttling, signed torque scaling,
+limit flags, CSV sampling and redirected output. The trial factors are
 `SPEED_GAIN_PERCENT = 125` and `INTEGRAL_TIME_PERCENT = 75` in tuning.py; later trials change those constants
 in a reviewed revision rather than increasing it automatically on each run.
 

@@ -17,3 +17,4 @@ output.txt
 
 # Last local motor-error/torque diagnostic recording
 last-hold.csv
+last-hold-settings.json

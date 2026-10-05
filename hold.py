@@ -2,6 +2,7 @@
 """Stationary CSP hold supervisor; only shipped realtime HAL modules required."""
 import os
 import csv
+import json
 import signal
 import sys
 import time
@@ -138,6 +139,10 @@ class HoldTest:
         self.enable()
         print('CSP HOLD ENABLED. Press Enter in the launcher or run ./spindle-test.sh off.', flush=True)
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'last-hold.csv')
+        if self.tuner is not None:
+            with open(os.path.join(os.path.dirname(path), 'last-hold-settings.json'), 'w') as f:
+                json.dump(self.tuner.last_trial, f, indent=2, sort_keys=True)
+                f.write('\n')
         print('Recording motor error and actual torque to ' + path, flush=True)
         with open(path, 'w', newline='') as log:
             readout = MotorErrorReadout(clock=self.clock, log=log)

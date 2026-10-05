@@ -71,9 +71,9 @@ Reuse the target PDO generator; do not start the full-mill drive manager.
 Every drive control word remains zero. Preserve the current spindle mode/mask.
 Confirm feedback and Switch On Disabled, print a snapshot, then release HAL.
 hold captures the current position and enables CSP on the spindle only.
-hold trials +25% speed gain and 75% integral time; position gain unchanged.
+hold trials double position and speed gains; integral time unchanged.
 Live motor error uses PDO feedback; no SDO reads run in the holding loop.
-Enter, Ctrl+C, or off requests disable, verified speed/integral restore, then CSV mode 9.
+Enter, Ctrl+C, or off requests disable, verified position/speed restore, then CSV mode 9.
 PLAN
  ;;
  check) check ;;

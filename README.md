@@ -1,12 +1,11 @@
 # SV670N stationary spindle hold
 
-The untuned CSP hold has passed on the target and improved restoring force.
-Increasing position gain to 150% added return noise without noticeably reducing
-deflection. This revision instead keeps the original position gain and trials
-**125% of the original speed-loop gain and 75% of the original speed integral
-time**, with a live motor-error/torque display. The speed-only trial gave no noticeable
-holding improvement. The new P/I trial is offline-tested and still needs its
-first hardware run.
+The standalone CSP hold has passed on the target. This revision trials
+**double the original position and speed proportional gains**, while keeping
+the original speed integral time. The previous recording showed substantial
+transient motor error without reaching the requested torque ceiling; this
+larger coordinated step targets proportional response. The new gains are
+offline-tested and still need their first hardware run.
 
 ## Run on the target
 
@@ -24,15 +23,19 @@ bash ./spindle-test.sh hold
 There is no requirement to repeat `disabled`. The hold launcher also performs
 `check` itself. Run `hold` in an interactive terminal.
 
-Plain `hold` automatically reads the live first-bank speed gain (0x2008:1),
-saves it locally, and applies **125% of that original value**, rounded to the
-nearest raw count. A 20.0 Hz baseline becomes 25.0 Hz. The same hold also trials **75% of the
-original speed integral time (0x2008:2)**: a 4.00 ms baseline becomes 3.00 ms.
-Shortening this time strengthens integral action; it is not an increase to
-position proportional gain. The position-gain boost has been removed: the original position gain is kept (8.0 Hz in the supplied
-configuration). The original and trial speed gain/integral time and the
-unchanged position gain are displayed at startup; no fixed baseline is assumed.
-Second-bank gains, torque limits and filters are unchanged. No tuning arguments or manual SDO commands are needed.
+Plain `hold` reads both live first-bank proportional gains, saves the originals,
+and applies **200% of each**, rounded to the nearest raw count:
+
+| Parameter | SDO | Trial with supplied baseline |
+|---|---|---|
+| Position proportional gain | 0x2008:3 | 8.0 -> 16.0 Hz |
+| Speed proportional gain | 0x2008:1 | 20.0 -> 40.0 Hz |
+| Speed integral time | 0x2008:2 | Keep original 4.00 ms |
+
+Actual original/trial values are displayed at startup; no fixed baseline is
+assumed. The integral-time reduction from the previous trial is removed.
+Second-bank gains, torque limits and filters are unchanged. No tuning arguments
+or manual SDO commands are needed.
 
 Wait for **CSP HOLD ENABLED** before assessing spindle rigidity. The command
 holds the current position; it does not request a new angle or a tool change.
@@ -46,7 +49,7 @@ bash ./spindle-test.sh off
 ```
 
 Normal exit first prints **Original speed gain restored and verified** and
-**Original integral time restored and verified**, then **Spindle disabled; CSV mode 9 acknowledged; standalone session can
+**Original position gain restored and verified**, then **Spindle disabled; CSV mode 9 acknowledged; standalone session can
 close.** Wait for the launcher to exit before reopening PathPilot. `off` is a
 stop request, not a separate step needed after the hold terminal has closed.
 If disable or mode acknowledgement is unavailable, use the hardware E-stop
@@ -54,8 +57,8 @@ and inspect the drive before restarting.
 
 Both original values are saved in `.position-gain-backup.json` before the first
 SDO write. The legacy filename is retained so outstanding backups from the
-position-only or speed-only trials are automatically recovered before starting
-a new speed/integral trial. A normal stop, handled signal or setup failure
+position-only, speed-only, or speed/integral trials are automatically recovered
+before starting this coordinated proportional-gain trial. A normal stop, handled signal or setup failure
 attempts to restore both values while disabled, before requesting CSV. Failed writes/readbacks
 abort enable. Failed restoration retains the file, reports failure and does
 not request CSV. Do not reopen PathPilot until restoration is confirmed.
@@ -66,9 +69,9 @@ saved originals while disabled before starting a fresh trial. An unexpected
 live gain or a different drive stops recovery rather than overwriting it.
 Do not delete the file to bypass a recovery error. `disabled` does not recover
 a pending tuning record. Repeated completed runs always start from the restored
-baseline, so neither tuning adjustment compounds. A live integral time of
-512.00 ms (integral disabled) or a trial below the documented minimum is
-rejected before either setting is written.
+baseline, so neither gain increase compounds. Either doubled gain exceeding
+the supported range aborts before either setting is written. This revision
+does not modify integral time, including a previously disabled integrator.
 
 ## Sequence and boundaries
 
@@ -92,12 +95,13 @@ Mode/state/interlock loss requests a stop. A realtime latch gates the spindle
 control word on bus OP, STO feedback, drive fault, ATC air/VFD interlocks,
 supervisor permit and a one-second heartbeat watchdog. A lost heartbeat or
 interlock drops the control word to zero. Normal exit confirms disabled state
-and restores/verifies the original speed gain and integral time before requesting and
+and restores/verifies the original speed and position gains before requesting and
 acknowledging CSV mode 9. Hardware STO/E-stop remains
 available independently of this software test.
 
-Only 0x2008:1 and 0x2008:2 are downloaded for this P/I trial and restoration. Recovery of
-an outstanding old position-gain backup may also restore 0x2008:3. No
+Only 0x2008:1 and 0x2008:3 are downloaded for this proportional trial and
+restoration. Recovery of a previous speed/integral backup may also restore
+0x2008:2. No
 EEPROM-save command, mask, gearing or other tuning-parameter write is sent.
 60FE:2 may be zero or 0x04010000 and is preserved. DO2 remains drive-controlled
 ALM/contactor with 2004:3=11 and 2004:4=1. The gain-switchover PDO is low,
@@ -148,7 +152,9 @@ Press Enter to disable and restore.
 signed actual torque (raw and percent rated), status word and internal-limit
 flag at approximately 20 samples/second. It is flushed about once a second and
 on normal stop. Each new powered hold overwrites this file, so copy a recording
-you want to keep before running another test. It is ignored by Git.
+you want to keep before running another test. `last-hold-settings.json` saves
+the original/trial position and speed gains and the unchanged integral time
+for that recording. Send both files for comparisons. Both are ignored by Git.
 
 This capture helps distinguish sustained position error, torque building or
 plateauing, and physical spindle movement with little motor error. Torque near
@@ -204,12 +210,12 @@ sourcing protection and read failures. They do not establish physical drive
 or realtime transport behavior. Tuning tests also cover durable backup before
 writes, live-baseline scaling, readback failures, ambiguous-write recovery,
 non-compounding retries, drive identity, external changes, disabled-state
-requirements, restoration before CSV, and recovery of the old position-gain
-and speed-only backup formats, second-write failures, partial restoration,
-and disabled/out-of-range integral settings. Display tests cover signed error, counter rollover, sampled
+requirements, restoration before CSV, and recovery of all three previous
+backup formats, second-write failures, partial restoration, non-default
+position baselines, and preservation of integral time. Display tests cover signed error, counter rollover, sampled
 peaks between display updates, terminal throttling, signed torque scaling,
 limit flags, CSV sampling and redirected output. The trial factors are
-`SPEED_GAIN_PERCENT = 125` and `INTEGRAL_TIME_PERCENT = 75` in tuning.py; later trials change those constants
+`SPEED_GAIN_PERCENT = 200` and `POSITION_GAIN_PERCENT = 200` in tuning.py; later trials change those constants
 in a reviewed revision rather than increasing it automatically on each run.
 
 ## Updating a Git checkout on the controller

@@ -1,11 +1,11 @@
-"""Temporary SV670N speed P/I trial, with durable restore state."""
+"""Coordinated SV670N position/speed proportional-gain trial, with durable restore state."""
 import json
 import os
 import subprocess
 
 # Change this in a later revision after evaluating the preceding trial.
-SPEED_GAIN_PERCENT = 125
-INTEGRAL_TIME_PERCENT = 75
+SPEED_GAIN_PERCENT = 200
+POSITION_GAIN_PERCENT = 200
 GAIN_INDEX = '0x2008'
 GAIN_SUBINDEX = 1
 
@@ -41,6 +41,7 @@ class GainTuner:
     def __init__(self, backup_path, drive=None):
         self.path = backup_path
         self.drive = drive if drive is not None else EtherCAT()
+        self.last_trial = None
 
     def identity(self):
         identity = [self.drive.read('uint32', '0x1018', sub) for sub in (1, 2, 4)]
@@ -85,11 +86,12 @@ class GainTuner:
             # Old position-only (v1) and speed-only (v2) records remain valid.
             entries = [dict(subindex=3 if version == 1 else 1,
                             original=record['original'], trial=record['trial'])]
-        elif version == 3:
+        elif version in (3, 4):
+            expected_subindices = {1, 2} if version == 3 else {1, 3}
             entries = record.get('entries')
             if (not isinstance(entries, list) or len(entries) != 2 or
-                    {e.get('subindex') for e in entries if isinstance(e, dict)} != {1, 2}):
-                raise RuntimeError('Invalid saved speed/integral restore record')
+                    {e.get('subindex') for e in entries if isinstance(e, dict)} != expected_subindices):
+                raise RuntimeError('Invalid saved multi-setting restore record')
         else:
             raise RuntimeError('Unsupported tuning restore record version')
         limits = {1: (1, 20000), 2: (15, 51200), 3: (1, 20000)}
@@ -151,22 +153,25 @@ class GainTuner:
         position = self.gain(3)
         if not 1 <= speed <= 20000:
             raise RuntimeError('Live speed gain is outside the supported range')
-        # 512.00 ms disables integral action; do not silently enable it.
-        if not 15 <= integral < 51200:
-            raise RuntimeError('Live integral time is out of range or integral action is disabled')
+        if not 1 <= position <= 20000:
+            raise RuntimeError('Live position gain is outside the supported range')
         trial_speed = (speed * SPEED_GAIN_PERCENT + 50) // 100
-        trial_integral = (integral * INTEGRAL_TIME_PERCENT + 50) // 100
+        trial_position = (position * POSITION_GAIN_PERCENT + 50) // 100
         if not speed < trial_speed <= 20000:
             raise RuntimeError('Speed-gain trial is out of range or rounds to no increase')
-        if not 15 <= trial_integral < integral:
-            raise RuntimeError('Integral-time trial is out of range or rounds to no decrease')
+        if not position < trial_position <= 20000:
+            raise RuntimeError('Position-gain trial is out of range or rounds to no increase')
         entries = [dict(subindex=1, original=speed, trial=trial_speed),
-                   dict(subindex=2, original=integral, trial=trial_integral)]
+                   dict(subindex=3, original=position, trial=trial_position)]
         # Both originals are durably saved before the first of the two writes.
-        self.save(dict(version=3, identity=identity, entries=entries))
+        self.save(dict(version=4, identity=identity, entries=entries))
         for entry in entries:
             self.set_verified(entry['trial'], entry['subindex'])
-        print('Temporary speed gain: {:.1f} -> {:.1f} Hz (+{}%). Integral time: {:.2f} -> {:.2f} ms ({}% of original). Position gain unchanged: {:.1f} Hz.'.format(
-            speed / 10., trial_speed / 10., SPEED_GAIN_PERCENT - 100,
-            integral / 100., trial_integral / 100., INTEGRAL_TIME_PERCENT,
-            position / 10.), flush=True)
+        self.last_trial = dict(speed_original_hz=speed / 10.,
+                               speed_trial_hz=trial_speed / 10.,
+                               position_original_hz=position / 10.,
+                               position_trial_hz=trial_position / 10.,
+                               integral_time_ms=integral / 100.)
+        print('Temporary position gain: {:.1f} -> {:.1f} Hz. Speed gain: {:.1f} -> {:.1f} Hz. Integral time unchanged: {:.2f} ms.'.format(
+            position / 10., trial_position / 10., speed / 10., trial_speed / 10.,
+            integral / 100.), flush=True)

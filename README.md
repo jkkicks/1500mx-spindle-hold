@@ -1,11 +1,12 @@
 # SV670N stationary spindle hold
 
-The standalone CSP hold has passed on the target. This revision trials
-**double the original position and speed proportional gains**, while keeping
-the original speed integral time. The previous recording showed substantial
-transient motor error without reaching the requested torque ceiling; this
-larger coordinated step targets proportional response. The new gains are
-offline-tested and still need their first hardware run.
+The standalone CSP hold has passed on the target. The 200% trial (16 Hz
+position, 40 Hz speed on the supplied baseline) gave a clear improvement in
+hand-tested stiffness without reported noise or hunting. Its recording showed
+steady position at rest and up to 71.4% rated motor torque without the internal
+limit flag. This revision trials **250% of both original proportional gains**,
+one 25% step above the previous trial, while retaining the original speed
+integral time. This new setting still needs its first hardware run.
 
 ## Run on the target
 
@@ -24,16 +25,16 @@ There is no requirement to repeat `disabled`. The hold launcher also performs
 `check` itself. Run `hold` in an interactive terminal.
 
 Plain `hold` reads both live first-bank proportional gains, saves the originals,
-and applies **200% of each**, rounded to the nearest raw count:
+and applies **250% of each**, rounded to the nearest raw count:
 
 | Parameter | SDO | Trial with supplied baseline |
 |---|---|---|
-| Position proportional gain | 0x2008:3 | 8.0 -> 16.0 Hz |
-| Speed proportional gain | 0x2008:1 | 20.0 -> 40.0 Hz |
+| Position proportional gain | 0x2008:3 | 8.0 -> 20.0 Hz |
+| Speed proportional gain | 0x2008:1 | 20.0 -> 50.0 Hz |
 | Speed integral time | 0x2008:2 | Keep original 4.00 ms |
 
 Actual original/trial values are displayed at startup; no fixed baseline is
-assumed. The integral-time reduction from the previous trial is removed.
+assumed. The speed integral time remains at its original value.
 Second-bank gains, torque limits and filters are unchanged. No tuning arguments
 or manual SDO commands are needed.
 
@@ -69,7 +70,7 @@ saved originals while disabled before starting a fresh trial. An unexpected
 live gain or a different drive stops recovery rather than overwriting it.
 Do not delete the file to bypass a recovery error. `disabled` does not recover
 a pending tuning record. Repeated completed runs always start from the restored
-baseline, so neither gain increase compounds. Either doubled gain exceeding
+baseline, so neither gain increase compounds. Either 250% trial gain exceeding
 the supported range aborts before either setting is written. This revision
 does not modify integral time, including a previously disabled integrator.
 
@@ -215,7 +216,7 @@ backup formats, second-write failures, partial restoration, non-default
 position baselines, and preservation of integral time. Display tests cover signed error, counter rollover, sampled
 peaks between display updates, terminal throttling, signed torque scaling,
 limit flags, CSV sampling and redirected output. The trial factors are
-`SPEED_GAIN_PERCENT = 200` and `POSITION_GAIN_PERCENT = 200` in tuning.py; later trials change those constants
+`SPEED_GAIN_PERCENT = 250` and `POSITION_GAIN_PERCENT = 250` in tuning.py; later trials change those constants
 in a reviewed revision rather than increasing it automatically on each run.
 
 ## Updating a Git checkout on the controller

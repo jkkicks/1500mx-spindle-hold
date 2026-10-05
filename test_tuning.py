@@ -65,21 +65,21 @@ class TuningTests(unittest.TestCase):
     def test_live_baseline_and_verified_restore(self):
         self.drive.speed_gain = 240
         self.tuner.apply()
-        self.assertEqual(self.drive.speed_gain, 480)
+        self.assertEqual(self.drive.speed_gain, 600)
         self.assertTrue(os.path.exists(self.path))
         self.tuner.restore()
         self.assertEqual(self.drive.speed_gain, 240)
         self.assertEqual(self.drive.position_gain, 80)
         self.assertEqual(self.drive.integral_time, 400)
         self.assertFalse(os.path.exists(self.path))
-        self.assertEqual(self.drive.writes, [('0x2008', 1, 480), ('0x2008', 3, 160),
+        self.assertEqual(self.drive.writes, [('0x2008', 1, 600), ('0x2008', 3, 200),
                                             ('0x2008', 3, 80), ('0x2008', 1, 240)])
 
     def test_recover_ambiguous_write(self):
         self.drive.fail_download_after_write = True
         with self.assertRaises(RuntimeError):
             self.tuner.apply()
-        self.assertEqual(self.drive.speed_gain, 400)
+        self.assertEqual(self.drive.speed_gain, 500)
         self.assertTrue(os.path.exists(self.path))
         GainTuner(self.path, self.drive).restore()
         self.assertEqual(self.drive.speed_gain, 200)
@@ -88,8 +88,8 @@ class TuningTests(unittest.TestCase):
     def test_interrupted_run_does_not_compound_gain(self):
         self.tuner.apply()
         GainTuner(self.path, self.drive).apply()
-        self.assertEqual(self.drive.speed_gain, 400)
-        self.assertEqual([w[2] for w in self.drive.writes], [400, 160, 80, 200, 400, 160])
+        self.assertEqual(self.drive.speed_gain, 500)
+        self.assertEqual([w[2] for w in self.drive.writes], [500, 200, 80, 200, 500, 200])
 
     def test_old_position_backup_recovered_before_speed_trial(self):
         self.drive.position_gain = 120
@@ -98,9 +98,9 @@ class TuningTests(unittest.TestCase):
         with open(self.path, 'w') as f:
             json.dump(record, f)
         self.tuner.apply()
-        self.assertEqual(self.drive.position_gain, 160)
-        self.assertEqual(self.drive.speed_gain, 400)
-        self.assertEqual(self.drive.writes, [('0x2008', 3, 80), ('0x2008', 1, 400), ('0x2008', 3, 160)])
+        self.assertEqual(self.drive.position_gain, 200)
+        self.assertEqual(self.drive.speed_gain, 500)
+        self.assertEqual(self.drive.writes, [('0x2008', 3, 80), ('0x2008', 1, 500), ('0x2008', 3, 200)])
         self.tuner.restore()
         self.assertEqual(self.drive.speed_gain, 200)
         self.assertEqual(self.drive.position_gain, 80)
@@ -112,7 +112,7 @@ class TuningTests(unittest.TestCase):
         with open(self.path, 'w') as f:
             json.dump(record, f)
         self.tuner.apply()
-        self.assertEqual(self.drive.speed_gain, 400)
+        self.assertEqual(self.drive.speed_gain, 500)
         self.assertEqual(self.drive.integral_time, 400)
         self.assertEqual(self.drive.writes[0], ('0x2008', 1, 200))
         self.tuner.restore()
@@ -123,7 +123,7 @@ class TuningTests(unittest.TestCase):
         self.drive.fail_on_subindex = 3
         with self.assertRaises(RuntimeError):
             self.tuner.apply()
-        self.assertEqual(self.drive.speed_gain, 400)
+        self.assertEqual(self.drive.speed_gain, 500)
         self.assertEqual(self.drive.integral_time, 400)
         with open(self.path) as f:
             record = json.load(f)
@@ -139,7 +139,7 @@ class TuningTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.tuner.restore()
         self.assertEqual(self.drive.integral_time, 400)
-        self.assertEqual(self.drive.speed_gain, 400)
+        self.assertEqual(self.drive.speed_gain, 500)
         self.assertTrue(os.path.exists(self.path))
         self.drive.ignore_subindex = None
         self.tuner.restore()
@@ -167,7 +167,7 @@ class TuningTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.tuner.restore()
         self.assertEqual(len(self.drive.writes), 2)
-        self.assertEqual(self.drive.speed_gain, 400)
+        self.assertEqual(self.drive.speed_gain, 500)
         self.assertTrue(os.path.exists(self.path))
 
     def test_old_integral_trial_recovered_before_proportional_trial(self):
@@ -178,8 +178,8 @@ class TuningTests(unittest.TestCase):
         with open(self.path, 'w') as f:
             json.dump(record, f)
         self.tuner.apply()
-        self.assertEqual(self.drive.speed_gain, 400)
-        self.assertEqual(self.drive.position_gain, 160)
+        self.assertEqual(self.drive.speed_gain, 500)
+        self.assertEqual(self.drive.position_gain, 200)
         self.assertEqual(self.drive.integral_time, 400)
         self.assertEqual(self.drive.writes[:2], [('0x2008', 2, 400), ('0x2008', 1, 200)])
         self.tuner.restore()
@@ -189,9 +189,9 @@ class TuningTests(unittest.TestCase):
     def test_nondefault_position_baseline_and_settings_metadata(self):
         self.drive.position_gain = 120
         self.tuner.apply()
-        self.assertEqual(self.drive.position_gain, 240)
-        self.assertEqual(self.tuner.last_trial['position_trial_hz'], 24.)
-        self.assertEqual(self.tuner.last_trial['speed_trial_hz'], 40.)
+        self.assertEqual(self.drive.position_gain, 300)
+        self.assertEqual(self.tuner.last_trial['position_trial_hz'], 30.)
+        self.assertEqual(self.tuner.last_trial['speed_trial_hz'], 50.)
         self.assertEqual(self.tuner.last_trial['integral_time_ms'], 4.)
         self.tuner.restore()
         self.assertEqual(self.drive.position_gain, 120)

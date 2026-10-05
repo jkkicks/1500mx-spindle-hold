@@ -3,9 +3,9 @@ import json
 import os
 import subprocess
 
-# Change this in a later revision after evaluating the preceding trial.
-SPEED_GAIN_PERCENT = 200
-POSITION_GAIN_PERCENT = 200
+# One coordinated step above the successful 200% trial, from the live baseline.
+SPEED_GAIN_PERCENT = 250
+POSITION_GAIN_PERCENT = 250
 GAIN_INDEX = '0x2008'
 GAIN_SUBINDEX = 1
 

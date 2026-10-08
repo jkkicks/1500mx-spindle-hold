@@ -1,0 +1,7 @@
+{
+  "integral_time_ms": 4.0,
+  "position_original_hz": 8.0,
+  "position_trial_hz": 20.0,
+  "speed_original_hz": 20.0,
+  "speed_trial_hz": 50.0
+}

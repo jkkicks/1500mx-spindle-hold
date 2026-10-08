@@ -1,12 +1,13 @@
 # SV670N stationary spindle hold
 
-The standalone CSP hold has passed on the target. The 200% trial (16 Hz
-position, 40 Hz speed on the supplied baseline) gave a clear improvement in
-hand-tested stiffness without reported noise or hunting. Its recording showed
-steady position at rest and up to 71.4% rated motor torque without the internal
-limit flag. This revision trials **250% of both original proportional gains**,
-one 25% step above the previous trial, while retaining the original speed
-integral time. This new setting still needs its first hardware run.
+The standalone CSP hold has passed on the target. The operator selected the
+**250% proportional-gain trial as the starting tune for PathPilot tool-change
+integration** after the 2026-10-07 hand test. On this SV670N, that is position
+gain **8.0 -> 20.0 Hz** and speed gain **20.0 -> 50.0 Hz**, with the original
+4.00 ms speed integral time. The [accepted run](evidence/2026-10-07-250pct/)
+contains the raw CSV and settings JSON. This repository remains the standalone
+feel-test harness; [production handoff](PRODUCTION_HANDOFF.md) records the
+integration requirements.
 
 ## Run on the target
 
@@ -40,7 +41,7 @@ or manual SDO commands are needed.
 
 Wait for **CSP HOLD ENABLED** before assessing spindle rigidity. The command
 holds the current position; it does not request a new angle or a tool change.
-Stop if the new gain produces buzzing, hunting or oscillation.
+Stop if the gain produces buzzing, hunting or oscillation.
 
 Press **Enter** or **Ctrl+C** in the hold terminal to stop. Alternatively, from
 another terminal in the same folder:
@@ -216,8 +217,9 @@ backup formats, second-write failures, partial restoration, non-default
 position baselines, and preservation of integral time. Display tests cover signed error, counter rollover, sampled
 peaks between display updates, terminal throttling, signed torque scaling,
 limit flags, CSV sampling and redirected output. The trial factors are
-`SPEED_GAIN_PERCENT = 250` and `POSITION_GAIN_PERCENT = 250` in tuning.py; later trials change those constants
-in a reviewed revision rather than increasing it automatically on each run.
+`SPEED_GAIN_PERCENT = 250` and `POSITION_GAIN_PERCENT = 250` in tuning.py; they
+are the accepted starting tune on the supplied baseline and do not increase
+automatically on repeated runs.
 
 ## Updating a Git checkout on the controller
 

@@ -16,5 +16,5 @@ output.txt
 .position-gain-backup.json
 
 # Last local motor-error/torque diagnostic recording
-last-hold.csv
-last-hold-settings.json
+/last-hold.csv
+/last-hold-settings.json

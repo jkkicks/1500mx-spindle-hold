@@ -3,7 +3,8 @@ import json
 import os
 import subprocess
 
-# One coordinated step above the successful 200% trial, from the live baseline.
+# Operator-accepted starting tune on the target (8->20 Hz position, 20->50 Hz speed).
+# Scale the live baseline in this standalone test; production must validate its own baseline.
 SPEED_GAIN_PERCENT = 250
 POSITION_GAIN_PERCENT = 250
 GAIN_INDEX = '0x2008'
